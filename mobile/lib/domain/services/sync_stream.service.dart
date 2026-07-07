@@ -516,7 +516,14 @@ class SyncStreamService {
   Future<void> _trashLocalAssets(Map<String, List<LocalAsset>> localAssetsToTrash) async {
     final localIds = localAssetsToTrash.values.expand((assets) => assets).map((asset) => asset.id).toList();
     _logger.info("Moving to trash ${localIds.join(", ")} assets");
-    final movedIds = await _assetMediaRepository.deleteAll(localIds);
+    final List<String> movedIds;
+    try {
+      movedIds = await _assetMediaRepository.deleteAll(localIds);
+    } catch (error, stackTrace) {
+      _logger.severe("Failed to move local assets to trash", error, stackTrace);
+      // The local sync service retries this on the next sync, so it is safe to log and exit early
+      return;
+    }
     if (movedIds.isNotEmpty) {
       final movedAssetsByAlbum = localAssetsToTrash.map(
         (albumId, assets) => MapEntry(albumId, assets.where((asset) => movedIds.contains(asset.id)).toList()),

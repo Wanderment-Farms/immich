@@ -45,6 +45,7 @@ class AssetMediaRepository {
     return false;
   }
 
+  // TODO: Replace the calls with a native pigeon method that filters ids no longer in the MediaStore before building the request
   Future<List<String>> deleteAll(List<String> ids) async {
     if (CurrentPlatform.isAndroid) {
       if (await _androidSupportsTrash()) {

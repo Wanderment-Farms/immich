@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:drift/drift.dart' as drift;
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/store.model.dart';
@@ -35,7 +36,6 @@ class _AbortCallbackWrapper {
 }
 
 class _MockAbortCallbackWrapper extends Mock implements _AbortCallbackWrapper {}
-
 
 void main() {
   late SyncStreamService sut;
@@ -492,6 +492,32 @@ void main() {
               as Map<String, List<LocalAsset>>;
       expect(trashArgs.keys, ['album-a']);
       expect(trashArgs['album-a'], [movedAsset]);
+    });
+
+    test("acks the batch and skips trash bookkeeping when moving assets to device trash fails", () async {
+      final localAsset = LocalAssetStub.image1.copyWith(id: 'stale-local', checksum: 'checksum-stale');
+      when(() => mockLocalAssetRepo.getAssetsFromBackupAlbums(any())).thenAnswer(
+        (_) async => {
+          'album-a': [localAsset],
+        },
+      );
+      when(
+        () => mockAssetMediaRepo.deleteAll(any()),
+      ).thenThrow(PlatformException(code: 'PLATFORM_ERROR', message: 'deleteWithIds failed'));
+
+      final events = [
+        SyncStreamStub.assetTrashed(
+          id: 'remote-1',
+          checksum: localAsset.checksum!,
+          ack: 'asset-remote-1',
+          trashedAt: DateTime(2025, 5, 1),
+        ),
+      ];
+
+      await simulateEvents(events);
+
+      verifyNever(() => mockTrashedLocalAssetRepo.trashLocalAsset(any()));
+      verify(() => mockSyncApiRepo.ack(['asset-remote-1'])).called(1);
     });
 
     test("skips device trashing when no local assets match the remote trash payload", () async {

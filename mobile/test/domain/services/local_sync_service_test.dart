@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart' as drift;
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/store.model.dart';
@@ -195,6 +196,24 @@ void main() {
               as Map<String, List<LocalAsset>>;
       expect(trashArgs.keys, ['album-a']);
       expect(trashArgs['album-a'], [movedAsset]);
+    });
+
+    test('continues the device diff when moving local assets to trash fails', () async {
+      await Store.put(StoreKey.manageLocalMediaAndroid, true);
+      when(() => mockPermissionRepository.hasManageMediaPermission()).thenAnswer((_) async => true);
+      when(() => mockTrashedLocalAssetRepository.getToTrash()).thenAnswer(
+        (_) async => {
+          'album-a': [LocalAssetStub.image1],
+        },
+      );
+      when(
+        () => mockAssetMediaRepository.deleteAll(any()),
+      ).thenThrow(PlatformException(code: 'PLATFORM_ERROR', message: 'deleteWithIds failed'));
+
+      await sut.sync();
+
+      verifyNever(() => mockTrashedLocalAssetRepository.trashLocalAsset(any()));
+      verify(() => mockNativeSyncApi.getMediaChanges()).called(1);
     });
 
     test('does not attempt restore when repository has no assets to restore', () async {

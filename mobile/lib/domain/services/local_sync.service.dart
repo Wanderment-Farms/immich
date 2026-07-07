@@ -413,7 +413,16 @@ class LocalSyncService {
     if (localAssetsToTrash.isNotEmpty) {
       final localIds = localAssetsToTrash.values.expand((assets) => assets).map((asset) => asset.id).toList();
       _log.info("Moving to trash ${localIds.join(", ")} assets");
-      final movedIds = await _assetMediaRepository.deleteAll(localIds);
+      final List<String> movedIds;
+      try {
+        movedIds = await _assetMediaRepository.deleteAll(localIds);
+      } catch (error, stackTrace) {
+        _log.severe("Failed to move local assets to trash", error, stackTrace);
+        // Automatic trash sync shouldn't block sync of other assets
+        // If the delete fails because an asset is in trash, the successive sync process
+        // will also remove it from the local DB
+        return;
+      }
       if (movedIds.isNotEmpty) {
         final movedAssetsByAlbum = localAssetsToTrash.map(
           (albumId, assets) => MapEntry(albumId, assets.where((asset) => movedIds.contains(asset.id)).toList()),
