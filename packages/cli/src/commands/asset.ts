@@ -54,10 +54,6 @@ class UploadFile extends File {
     super([], basename(filepath));
   }
 
-  get size() {
-    return this._size;
-  }
-
   stream() {
     return createReadStream(this.filepath) as any;
   }
@@ -433,7 +429,7 @@ const uploadFile = async (input: string, stats: Stats): Promise<AssetMediaRespon
     throw new Error(await response.text());
   }
 
-  return response.json();
+  return response.json() as Promise<AssetMediaResponseDto>;
 };
 
 export const findSidecar = (filepath: string): string | undefined => {
@@ -570,7 +566,7 @@ const updateAlbums = async (assets: Asset[], options: UploadOptionsDto) => {
   albumUpdateProgress.start(assets.length, 0);
 
   try {
-    for (const [albumId, assets] of albumToAssets.entries()) {
+    for (const [albumId, assets] of albumToAssets) {
       for (const assetBatch of chunk(assets, Math.min(1000 * concurrency, 65_000))) {
         await addAssetsToAlbum({ id: albumId, bulkIdsDto: { ids: assetBatch } });
         albumUpdateProgress.increment(assetBatch.length);
