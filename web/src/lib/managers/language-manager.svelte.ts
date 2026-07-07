@@ -3,7 +3,7 @@ import { lang } from '$lib/stores/preferences.store';
 import { langs } from '$lib/utils/i18n';
 
 class LanguageManager {
-  constructor() {
+  init() {
     eventManager.on({
       AppInit: () => lang.subscribe((lang) => this.setLanguage(lang)),
     });
