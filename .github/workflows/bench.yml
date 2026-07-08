@@ -45,8 +45,8 @@ jobs:
         env:
           SHARP_IGNORE_GLOBAL_LIBVIPS: 'true'
         run: |
-          pnpm --filter @immich/sdk --filter @immich/plugin-sdk --filter @immich/plugin-core install --frozen-lockfile
-          pnpm --filter @immich/sdk --filter @immich/plugin-sdk --filter @immich/plugin-core build
+          pnpm --filter @immich/sdk --filter @immich/plugin-sdk install --frozen-lockfile
+          pnpm --filter @immich/sdk --filter @immich/plugin-sdk build
 
       - name: Install server deps
         env:
