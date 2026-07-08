@@ -2,6 +2,8 @@ name: Bench
 
 on:
   workflow_dispatch:
+  push:
+    branches: ['bench/blacksmith']
 
 concurrency:
   group: bench-${{ github.ref }}
