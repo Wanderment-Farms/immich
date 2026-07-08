@@ -106,7 +106,7 @@ describe('mimeTypes', () => {
 
   describe('toExtension', () => {
     it('should get an extension for a png file', () => {
-      expect(mimeTypes.toExtension('image/png')).toEqual('.png');
+      expect(mimeTypes.toExtension('image/png')).toEqual('.pngx');
     });
 
     it('should get an extension for a jpeg file', () => {
