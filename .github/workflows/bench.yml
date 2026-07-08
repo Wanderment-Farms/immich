@@ -1,0 +1,75 @@
+name: Bench
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# Time-boxed pilot workflow for the Blacksmith vs GitHub Actions benchmark
+# (see mejoff/blacksmith-test). Reimplements Immich's real "Test & Lint Server"
+# job (server/mise.toml [tasks.ci-unit]) with plain actions/setup-node instead
+# of Immich's internal mise wrapper, since that wrapper depends on a GitHub App
+# token scoped to the immich-app org that a fork doesn't have.
+#
+# Only diff vs bench/gha: runs-on label + useblacksmith/cache in place of the
+# built-in setup-node/pnpm cache, per Blacksmith's migration guide.
+jobs:
+  server-unit-tests:
+    name: Test & Lint Server
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.6.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+
+      - name: Cache pnpm store (Blacksmith)
+        uses: useblacksmith/cache@v5
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install sdk/plugin packages
+        env:
+          SHARP_IGNORE_GLOBAL_LIBVIPS: 'true'
+        run: |
+          pnpm --filter @immich/sdk --filter @immich/plugin-sdk --filter @immich/plugin-core install --frozen-lockfile
+          pnpm --filter @immich/sdk --filter @immich/plugin-sdk --filter @immich/plugin-core build
+
+      - name: Install server deps
+        env:
+          SHARP_IGNORE_GLOBAL_LIBVIPS: 'true'
+        run: pnpm install --filter immich --frozen-lockfile
+
+      - name: Format check
+        working-directory: server
+        run: pnpm exec prettier --check .
+
+      - name: Lint
+        working-directory: server
+        run: pnpm exec eslint "src/**/*.ts" "test/**/*.ts" --max-warnings 0
+
+      - name: Type check
+        working-directory: server
+        run: pnpm exec tsc --noEmit
+
+      - name: Unit tests
+        working-directory: server
+        run: pnpm exec vitest --config test/vitest.config.mjs --run
