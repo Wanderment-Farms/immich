@@ -12,11 +12,14 @@ concurrency:
 permissions:
   contents: read
 
-# Time-boxed pilot workflow for the Blacksmith vs GitHub Actions benchmark
-# (see mejoff/blacksmith-test). Reimplements Immich's real "Test & Lint Server"
-# job (server/mise.toml [tasks.ci-unit]) with plain actions/setup-node instead
-# of Immich's internal mise wrapper, since that wrapper depends on a GitHub App
-# token scoped to the immich-app org that a fork doesn't have.
+# Full benchmark suite for the Blacksmith vs GitHub Actions comparison
+# (see mejoff/blacksmith-test -> Wanderment-Farms/blacksmith-test). Reimplements
+# 5 of Immich's real CI jobs with plain public GitHub Actions instead of
+# Immich's internal mise/GitHub-App-token wrapper, which depends on org-only
+# secrets a fork doesn't have. Only diff vs bench/blacksmith: runs-on labels +
+# useblacksmith/cache in place of actions/setup-node's built-in cache, and
+# useblacksmith/setup-docker-builder + useblacksmith/build-push-action for the
+# Docker job, per Blacksmith's migration guide.
 jobs:
   server-unit-tests:
     name: Test & Lint Server
@@ -28,43 +31,224 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 11.6.0
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24.15.0
           cache: pnpm
           cache-dependency-path: '**/pnpm-lock.yaml'
-
       - name: Install sdk/plugin packages
         env:
           SHARP_IGNORE_GLOBAL_LIBVIPS: 'true'
         run: |
           pnpm --filter @immich/sdk --filter @immich/plugin-sdk install --frozen-lockfile
           pnpm --filter @immich/sdk --filter @immich/plugin-sdk build
-
       - name: Install server deps
         env:
           SHARP_IGNORE_GLOBAL_LIBVIPS: 'true'
         run: pnpm install --filter immich --frozen-lockfile
-
       - name: Format check
         working-directory: server
         run: pnpm exec prettier --check .
-
       - name: Lint
         working-directory: server
         run: pnpm exec eslint "src/**/*.ts" "test/**/*.ts" --max-warnings 0
-
       - name: Type check
         working-directory: server
         run: pnpm exec tsc --noEmit
-
       - name: Unit tests
         working-directory: server
         run: pnpm exec vitest --config test/vitest.config.mjs --run
+
+  server-medium-tests:
+    name: Medium Tests (Server)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.6.0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+          cache-dependency-path: '**/pnpm-lock.yaml'
+      - name: Install sdk/plugin packages
+        env:
+          SHARP_IGNORE_GLOBAL_LIBVIPS: 'true'
+        run: |
+          pnpm --filter @immich/sdk --filter @immich/plugin-sdk install --frozen-lockfile
+          pnpm --filter @immich/sdk --filter @immich/plugin-sdk build
+      - name: Install server deps
+        env:
+          SHARP_IGNORE_GLOBAL_LIBVIPS: 'true'
+        run: pnpm install --filter immich --frozen-lockfile
+      - name: Setup mise
+        uses: jdx/mise-action@v2
+        with:
+          install: false
+      - name: Install extism-js toolchain
+        run: mise install "github:extism/cli@1.6.3" "github:webassembly/binaryen@version_124" "github:extism/js-pdk@1.6.0"
+      - name: Build plugin-core (WASM)
+        working-directory: packages/plugin-core
+        env:
+          SHARP_IGNORE_GLOBAL_LIBVIPS: 'true'
+        run: |
+          pnpm install --frozen-lockfile
+          mise exec -- pnpm build
+      - name: Medium tests
+        working-directory: server
+        env:
+          SHARP_IGNORE_GLOBAL_LIBVIPS: 'true'
+        run: pnpm exec vitest --config test/vitest.config.medium.mjs --run
+
+  web-lint:
+    name: Lint Web
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ./web
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.6.0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+          cache-dependency-path: '**/pnpm-lock.yaml'
+      - name: Install sdk package
+        working-directory: .
+        run: |
+          pnpm --filter @immich/sdk install --frozen-lockfile
+          pnpm --filter @immich/sdk build
+      - name: Install web deps
+        run: pnpm install --frozen-lockfile
+      - name: Run linter
+        run: pnpm lint
+
+  web-unit-tests:
+    name: Test Web
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ./web
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.6.0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+          cache-dependency-path: '**/pnpm-lock.yaml'
+      - name: Install sdk package
+        working-directory: .
+        run: |
+          pnpm --filter @immich/sdk install --frozen-lockfile
+          pnpm --filter @immich/sdk build
+      - name: Install web deps
+        run: pnpm install --frozen-lockfile
+      - name: Format check
+        run: pnpm run format
+      - name: Type check
+        run: pnpm run check:typescript
+      - name: Svelte check
+        run: pnpm run check:svelte
+      - name: Unit tests
+        run: pnpm exec vitest --run
+
+  e2e-tests-server-cli:
+    name: End-to-End Tests (Server & CLI)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./e2e
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          persist-credentials: false
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: 'pnpm'
+          cache-dependency-path: '**/pnpm-lock.yaml'
+      - name: Setup packages
+        run: pnpm --filter @immich/sdk --filter @immich/cli install --frozen-lockfile && pnpm --filter @immich/sdk --filter @immich/cli build
+      - name: Run setup web
+        run: pnpm install --frozen-lockfile && pnpm exec svelte-kit sync
+        working-directory: ./web
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Start Docker Compose
+        run: docker compose up -d --build --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
+      - name: Run e2e tests (api & cli)
+        env:
+          VITEST_DISABLE_DOCKER_SETUP: true
+        run: pnpm test
+      - name: Run e2e tests (maintenance)
+        env:
+          VITEST_DISABLE_DOCKER_SETUP: true
+        run: pnpm test:maintenance
+
+  docker-build-server:
+    name: Build Server Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/wanderment-farms/immich-server:gha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
